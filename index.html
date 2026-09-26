@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>رفع ملفات إلى Hugging Face</title>
+<style>
+  body{font-family:-apple-system,Segoe UI,Tahoma,Arial;background:#0f172a;color:#e2e8f0;max-width:640px;margin:0 auto;padding:24px}
+  h1{font-size:1.3rem}
+  .card{background:#1e293b;border-radius:12px;padding:18px;margin-bottom:16px}
+  label{display:block;margin-bottom:6px;font-size:.9rem;color:#94a3b8}
+  input[type=text],input[type=password]{width:100%;padding:10px;border-radius:8px;border:1px solid #334155;background:#0f172a;color:#e2e8f0;box-sizing:border-box;margin-bottom:10px}
+  input[type=file]{width:100%;margin-bottom:10px;color:#e2e8f0}
+  button{background:#2563eb;color:#fff;border:none;padding:10px 16px;border-radius:8px;cursor:pointer;font-size:.95rem}
+  button.secondary{background:#334155}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  .row{display:flex;gap:8px}
+  #progressWrap{background:#0f172a;border-radius:8px;overflow:hidden;height:10px;margin:10px 0;display:none}
+  #progressBar{height:100%;width:0%;background:#22c55e;transition:width .2s}
+  #status{font-size:.85rem;color:#94a3b8;white-space:pre-wrap;word-break:break-all}
+  #result a{color:#38bdf8}
+  .warn{font-size:.8rem;color:#fbbf24;margin-top:8px;line-height:1.5}
+</style>
+</head>
+<body>
+<h1>📤 رفع صوت / فيديو إلى Hugging Face</h1>
+
+<div class="card">
+  <label>Access Token (صلاحية write)</label>
+  <input type="password" id="token" placeholder="hf_xxxxxxxxxxxxxxxxxxxxxxxx">
+  <div class="row">
+    <button id="saveToken">حفظ التوكن</button>
+    <button class="secondary" id="clearToken">مسح التوكن</button>
+  </div>
+  <div class="warn">⚠️ التوكن بيتحفظ في localStorage الخاص بالمتصفح على جهازك فقط، ومش موجود إطلاقًا جوه كود الصفحة نفسها — حتى لو حد فتح نفس الرابط من جهازه هو، مش هيلاقي التوكن. بس لو حد استخدم نفس المتصفح/الجهاز بتاعك، ممكن يشوفه. امسحه من هنا لو الجهاز مش خاص بيك.</div>
+</div>
+
+<div class="card">
+  <label>المستودع (Repo ID)</label>
+  <input type="text" id="repoId" value="ppp664723/swnw-lectures">
+  <label>اسم/مسار الملف داخل المستودع</label>
+  <input type="text" id="pathInRepo" placeholder="هيتملى تلقائيًا باسم الملف اللي هتختاره">
+  <label>اختر ملف صوت أو فيديو</label>
+  <input type="file" id="fileInput" accept="audio/*,video/*">
+  <button id="uploadBtn">⬆️ رفع الملف</button>
+  <div id="progressWrap"><div id="progressBar"></div></div>
+  <div id="status"></div>
+  <div id="result"></div>
+</div>
+
+<script type="module">
+import { uploadFile } from "https://cdn.jsdelivr.net/npm/@huggingface/hub@1.0.2/+esm";
+
+const tokenInput = document.getElementById('token');
+const repoInput = document.getElementById('repoId');
+const pathInput = document.getElementById('pathInRepo');
+const fileInput = document.getElementById('fileInput');
+const uploadBtn = document.getElementById('uploadBtn');
+const statusEl = document.getElementById('status');
+const resultEl = document.getElementById('result');
+const progressWrap = document.getElementById('progressWrap');
+const progressBar = document.getElementById('progressBar');
+
+const STORAGE_KEY = 'hf_upload_token';
+
+// تحميل توكن محفوظ سابقًا في متصفح هذا الجهاز فقط (لو موجود)
+try {
+  const saved = localStorage.getItem(STORAGE_KEY);
+  if (saved) tokenInput.value = saved;
+} catch (e) {}
+
+document.getElementById('saveToken').onclick = () => {
+  try {
+    localStorage.setItem(STORAGE_KEY, tokenInput.value.trim());
+    statusEl.textContent = '✅ اتحفظ التوكن في متصفح الجهاز ده.';
+  } catch (e) {
+    statusEl.textContent = '⚠️ تعذر الحفظ: ' + e.message;
+  }
+};
+
+document.getElementById('clearToken').onclick = () => {
+  try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
+  tokenInput.value = '';
+  statusEl.textContent = '🗑️ اتمسح التوكن من متصفح الجهاز ده.';
+};
+
+fileInput.onchange = () => {
+  if (fileInput.files[0] && !pathInput.value) {
+    pathInput.value = fileInput.files[0].name;
+  }
+};
+
+uploadBtn.onclick = async () => {
+  const token = tokenInput.value.trim();
+  const repo = repoInput.value.trim();
+  const file = fileInput.files[0];
+  const path = (pathInput.value.trim()) || (file && file.name);
+
+  resultEl.innerHTML = '';
+
+  if (!token) { statusEl.textContent = '❌ حط التوكن الأول.'; return; }
+  if (!repo)  { statusEl.textContent = '❌ حط اسم المستودع (repo id).'; return; }
+  if (!file)  { statusEl.textContent = '❌ اختار ملف الأول.'; return; }
+
+  uploadBtn.disabled = true;
+  progressWrap.style.display = 'block';
+  progressBar.style.width = '5%';
+  statusEl.textContent = '⏳ جاري الرفع... حسب حجم الملف وسرعة النت.';
+
+  try {
+    await uploadFile({
+      repo: { type: "dataset", name: repo },
+      credentials: { accessToken: token },
+      file: { path: path, content: file }
+    });
+
+    progressBar.style.width = '100%';
+    statusEl.textContent = '✅ اترفع بنجاح.';
+
+    const encodedPath = path.split('/').map(encodeURIComponent).join('/');
+    const directLink = `https://huggingface.co/datasets/${repo}/resolve/main/${encodedPath}`;
+    const viewLink = `https://huggingface.co/datasets/${repo}/blob/main/${encodedPath}`;
+
+    resultEl.innerHTML = `
+      <p>رابط التحميل المباشر (للبوت):<br><a href="${directLink}" target="_blank">${directLink}</a></p>
+      <p>رابط الصفحة على Hugging Face:<br><a href="${viewLink}" target="_blank">${viewLink}</a></p>
+    `;
+  } catch (err) {
+    statusEl.textContent = '❌ فشل الرفع: ' + (err && err.message ? err.message : err);
+  } finally {
+    uploadBtn.disabled = false;
+  }
+};
+</script>
+</body>
+</html>
